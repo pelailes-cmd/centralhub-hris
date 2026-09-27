@@ -184,7 +184,7 @@ test("mobile navigation traps focus, closes with Escape, and avoids page overflo
     "/login",
   ]) {
     await page.goto(route);
-    await expect(page.getByRole("heading").first()).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     expect
       .soft(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
@@ -212,7 +212,8 @@ test("mobile navigation traps focus, closes with Escape, and avoids page overflo
     await page.setViewportSize({ width, height: 1024 });
     for (const route of ["/", "/employees", "/attendance"]) {
       await page.goto(route);
-      await expect(page.locator("h1")).toBeVisible();
+      // Next.js can retain hidden route markup; require one accessible page heading.
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       expect
         .soft(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
