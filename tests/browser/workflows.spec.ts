@@ -1,6 +1,18 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+
+async function auditAccessibility(page: Page) {
+  // Measure the settled page, not a transient frame of its entry fade.
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    const animations = document
+      .getAnimations()
+      .filter((animation) => Number.isFinite(animation.effect?.getComputedTiming().endTime));
+    await Promise.all(animations.map((animation) => animation.finished.catch(() => undefined)));
+  });
+  return new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
+}
 
 test("overview has functional navigation and accessible content", async ({ page }) => {
   const errors: string[] = [];
@@ -10,9 +22,7 @@ test("overview has functional navigation and accessible content", async ({ page 
     page.getByRole("heading", { name: /Good (morning|afternoon|evening), Maya/ }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Clock in", exact: true })).toBeVisible();
-  const audit = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-    .analyze();
+  const audit = await auditAccessibility(page);
   expect(audit.violations).toEqual([]);
   mkdirSync("artifacts", { recursive: true });
   await page.screenshot({ path: "artifacts/overview-desktop.png", fullPage: true });
@@ -181,14 +191,15 @@ test("mobile navigation traps focus, closes with Escape, and avoids page overflo
         `Overflow on ${route}`,
       )
       .toBe(true);
-    const audit = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-      .analyze();
+    const audit = await auditAccessibility(page);
     expect
       .soft(
         audit.violations.map((violation) => ({
           id: violation.id,
-          elements: violation.nodes.map((node) => node.html),
+          elements: violation.nodes.map((node) => ({
+            html: node.html,
+            summary: node.failureSummary,
+          })),
         })),
         `Accessibility on ${route}`,
       )
@@ -211,9 +222,7 @@ test("mobile navigation traps focus, closes with Escape, and avoids page overflo
     }
   }
   await page.goto("/login");
-  const audit = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-    .analyze();
+  const audit = await auditAccessibility(page);
   expect(audit.violations).toEqual([]);
 });
 test("API routes reject missing origins and never serve preview records", async ({ request }) => {

@@ -1,6 +1,6 @@
 # Verification
 
-The automated suites validate the actual SQL migrations and the development interface. Hosted Supabase credentials were not supplied for this repository-first implementation, so SMTP delivery, hosted Auth, production Storage, and live deployment are separate setup checks.
+The automated suites validate the actual SQL migrations and the development interface. The website is deployed on Vercel with GitHub integration. Hosted Supabase credentials have not been supplied, so SMTP delivery, hosted Auth, and production Storage remain separate setup checks.
 
 ## Recorded results — September 27, 2026
 
@@ -15,9 +15,19 @@ The automated suites validate the actual SQL migrations and the development inte
 | Responsive layouts                           | Checked at 360, 390, 768, and 1440 pixels; no document-level horizontal overflow                                                    |
 | Accessibility                                | No axe WCAG A/AA violations on the overview, all module pages, and login; navigation focus trapping and Escape dismissal passed     |
 
-The final full browser run passed eight workflows; the overview exceeded its original 90-second whole-test limit while other checks were running. With a 180-second development test budget, its isolated rerun passed in 11.1 seconds. Individual assertion timeouts were unchanged. No test failures remain unresolved.
+The local full browser run passed eight workflows; the overview exceeded its original 90-second whole-test limit while other checks were running. With a 180-second development test budget, its isolated rerun passed in 11.1 seconds. Individual assertion timeouts were unchanged.
 
 The checks exposed and corrected muted-text contrast, mobile table overflow, keyboard access to the positions list, employee-profile routing, company-date boundaries, overly broad migration grants, and temporary password-verification session cleanup. Desktop and mobile screenshots are committed under `docs/screenshots`.
+
+## Hosted deployment
+
+- [Production website](https://centralhub-hris.vercel.app): the setup page returns HTTP 200 while Supabase is unconfigured.
+- GitHub repository `pelailes-cmd/centralhub-hris`, branch `main`, is connected to Vercel. An actual GitHub push triggered a successful production build and domain assignment.
+- The unconfigured employee API returns HTTP 503 with a setup message rather than employee data. Development preview access remains disabled in production.
+- The live website URL, a private rate-limit secret, and disabled development flags are configured in Vercel. Supabase connection values and first-account setup remain required.
+- [GitHub Actions](https://github.com/pelailes-cmd/centralhub-hris/actions/workflows/ci.yml) runs lint, TypeScript, database/account tests, the production build, and browser workflows in the cloud.
+
+The initial Linux browser run exposed accessibility measurements taken during page-entry fades. Accessibility scans now wait for fonts and finite animations to settle, preserving all contrast assertions and reporting the specific failure details when an assertion fails.
 
 ## Automated database and logic coverage
 
@@ -54,4 +64,4 @@ The directory uses server-side filtering, exact counts, and eight-row pagination
 
 ## Remaining environment setup
 
-Configure the Supabase project, apply migrations, supply environment variables, set SMTP/templates/redirect URLs/MFA options, bootstrap an administrator, assign real permissions/routes, replace fictional policies, and choose a Node-compatible host. No live Supabase project, public website deployment, payroll jurisdiction, or external messaging service is provisioned by the source repository.
+Connect the existing Supabase project using Vercel's production environment settings, verify its applied migrations, configure SMTP/templates/redirect URLs/MFA options, bootstrap an administrator, assign real permissions/routes, and replace fictional policies. The website is already hosted on Vercel. Live Supabase account flows, private storage, and email delivery still require acceptance checks after connection; jurisdiction-specific payroll calculations remain outside this release.
