@@ -128,6 +128,189 @@ afterAll(async () => {
   await db?.close();
 });
 
+describe("Supabase dashboard first-administrator setup", () => {
+  const email = "first.admin@example.test";
+  const script = readFileSync("scripts/bootstrap-admin-dashboard.sql", "utf8");
+  const configuredScript = (adminEmail = email, name = "Test Administrator") =>
+    script
+      .replace("REPLACE_WITH_YOUR_ADMIN_EMAIL", adminEmail)
+      .replace("REPLACE_WITH_YOUR_FULL_NAME", name);
+
+  async function createAuthUser(adminEmail = email, confirmed = true) {
+    await db.query(
+      "insert into auth.users(id,email,email_confirmed_at) values($1,$2,case when $3::boolean then now() else null end)",
+      [user(50), adminEmail, confirmed],
+    );
+  }
+
+  beforeEach(async () => {
+    // Keep the real fictional employees and migrations, but start with no application accounts.
+    // These extra Auth columns mirror hosted Supabase and are rolled back after each test.
+    await db.exec(`delete from public.accounts;
+      alter table auth.users add column email_confirmed_at timestamptz;
+      alter table auth.users add column banned_until timestamptz;
+      alter table auth.users add column deleted_at timestamptz;`);
+  });
+
+  it("links a confirmed Auth user, grants only the two setup roles, and retains the MFA gate", async () => {
+    await createAuthUser();
+    await db.exec(configuredScript());
+    const accounts = await db.query<{ status: string; employee_number: string; full_name: string }>(
+      "select a.status,e.employee_number,e.full_name from public.accounts a join public.employees e on e.id=a.employee_id",
+    );
+    expect(accounts.rows).toEqual([
+      { status: "active", employee_number: "CH-ADMIN-001", full_name: "Test Administrator" },
+    ]);
+    const roles = await db.query<{ role_name: string; scope: string }>(
+      "select role_name,scope from public.role_assignments order by role_name",
+    );
+    expect(roles.rows).toEqual([
+      { role_name: "Owner", scope: "company" },
+      { role_name: "Technical Administrator", scope: "company" },
+    ]);
+    expect(
+      await scalar<number>(
+        "select count(*)::int as value from public.audit_events where action='system.bootstrap' and actor_id=$1 and resource_id=$1",
+        [user(50)],
+      ),
+    ).toBe(1);
+
+    await db.query("insert into auth.sessions(id,user_id) values($1,$2)", [session(50), user(50)]);
+    await db.query("insert into public.app_sessions(id,user_id) values($1,$2)", [
+      session(50),
+      user(50),
+    ]);
+    await asUser(50, "aal1");
+    expect(await scalar<boolean>("select public.requires_mfa() as value")).toBe(true);
+    expect(await scalar<boolean>("select public.active_access() as value")).toBe(false);
+    await asUser(50, "aal2");
+    expect(await scalar<boolean>("select public.has_permission('access.manage') as value")).toBe(
+      true,
+    );
+    expect(await scalar<boolean>("select public.has_permission('accounts.manage') as value")).toBe(
+      true,
+    );
+    for (const permission of ["private.read", "payroll.read", "sensitive.medical.read"]) {
+      expect(
+        await scalar<boolean>("select public.has_permission($1,$2) as value", [
+          permission,
+          demoId(11),
+        ]),
+      ).toBe(false);
+    }
+  });
+
+  it("reuses an employee without changing their title or job classification", async () => {
+    const employee = (
+      await db.query<{ email: string; full_name: string; profile_type: string }>(
+        "select email,full_name,profile_type from public.employees where id=$1",
+        [demoId(11)],
+      )
+    ).rows[0];
+    await createAuthUser(employee.email);
+    await db.exec(configuredScript(employee.email));
+    expect(
+      await scalar<string>("select employee_id as value from public.accounts where id=$1", [
+        user(50),
+      ]),
+    ).toBe(demoId(11));
+    const preserved = await db.query(
+      "select email,full_name,profile_type from public.employees where id=$1",
+      [demoId(11)],
+    );
+    expect(preserved.rows[0]).toEqual(employee);
+    expect(await scalar<number>("select count(*)::int as value from public.employees")).toBe(22);
+  });
+
+  it("supports names with apostrophes without requiring SQL escaping", async () => {
+    await createAuthUser();
+    await db.exec(configuredScript(email, "Casey O'Connor"));
+    expect(
+      await scalar<string>("select full_name as value from public.employees where email=$1", [
+        email,
+      ]),
+    ).toBe("Casey O'Connor");
+  });
+
+  it("refuses unedited placeholders", async () => {
+    await expect(db.exec(script)).rejects.toThrow(/Replace the admin email and full name/);
+  });
+
+  it("requires a real Auth user created through Supabase", async () => {
+    await expect(db.exec(configuredScript())).rejects.toThrow(/Authentication > Users first/);
+  });
+
+  it("requires confirmation of the initial Auth user's email", async () => {
+    await createAuthUser(email, false);
+    await expect(db.exec(configuredScript())).rejects.toThrow(/Confirm this Auth user/);
+  });
+
+  it.each(["banned_until", "deleted_at"])("rejects a disabled Auth user (%s)", async (column) => {
+    await createAuthUser();
+    await db.query(`update auth.users set ${column}=now()+interval '1 day' where id=$1`, [
+      user(50),
+    ]);
+    await expect(db.exec(configuredScript())).rejects.toThrow(/Auth user is disabled/);
+  });
+
+  it("refuses to start another workspace even when its existing account is deactivated", async () => {
+    await createAuthUser();
+    await db.query(
+      "insert into public.accounts(id,employee_id,status) values($1,$2,'deactivated')",
+      [user(1), demoId(1)],
+    );
+    await expect(db.exec(configuredScript())).rejects.toThrow(/already has an account/);
+  });
+
+  it("does not turn an archived employee into an active administrator", async () => {
+    await createAuthUser();
+    await db.query(
+      "update public.employees set email=$1,employment_status='Archived' where id=$2",
+      [email, demoId(11)],
+    );
+    await expect(db.exec(configuredScript())).rejects.toThrow(
+      /employee for this email is archived/,
+    );
+  });
+
+  it.each(["anon", "authenticated"])("rejects execution as the %s database role", async (role) => {
+    await createAuthUser();
+    await db.exec(`set role ${role}`);
+    await expect(db.exec(configuredScript())).rejects.toThrow(/postgres role/);
+  });
+
+  it("rolls back account, employee, role, and audit writes when a grant cannot be created", async () => {
+    await createAuthUser();
+    await db.exec(`update public.role_templates
+      set permissions=permissions||array['missing.permission']::text[]
+      where name='Technical Administrator';
+      savepoint before_bootstrap;`);
+    await expect(db.exec(configuredScript())).rejects.toThrow(/foreign key/);
+    await db.exec("rollback to savepoint before_bootstrap");
+    expect(await scalar<number>("select count(*)::int as value from public.accounts")).toBe(0);
+    expect(
+      await scalar<number>("select count(*)::int as value from public.employees where email=$1", [
+        email,
+      ]),
+    ).toBe(0);
+    expect(await scalar<number>("select count(*)::int as value from public.role_assignments")).toBe(
+      0,
+    );
+    expect(
+      await scalar<number>("select count(*)::int as value from public.permission_grants"),
+    ).toBe(0);
+    expect(
+      await scalar<number>(
+        "select count(*)::int as value from public.audit_events where action='system.bootstrap' and actor_id=$1",
+        [user(50)],
+      ),
+    ).toBe(0);
+    expect(
+      await scalar<number>("select count(*)::int as value from auth.users where id=$1", [user(50)]),
+    ).toBe(1);
+  });
+});
+
 describe("real PostgreSQL authorization and workflows", () => {
   it("leaves unrelated public-schema objects and permissions untouched", async () => {
     await asUser(11, "aal1");

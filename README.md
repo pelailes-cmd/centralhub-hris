@@ -12,6 +12,8 @@ The application source lives in this GitHub repository. Supabase supplies Postgr
 
 CentralHub can run entirely on **Vercel + Supabase**. Vercel installs dependencies and builds the website in the cloud; your computer does not need to run a development server.
 
+**Already deployed and applied the SQL? Follow the [browser-based Supabase setup guide](docs/HOSTED_SETUP.md).** It walks through Auth settings, first-administrator creation in the Supabase dashboard, MFA, and email delivery. No local installation or `.env.local` is needed for that path.
+
 - Website: [centralhub-hris.vercel.app](https://centralhub-hris.vercel.app)
 - Hosting settings: [CentralHub on Vercel](https://vercel.com/afhinzzailes-9029s-projects/centralhub-hris)
 - Source: [pelailes-cmd/centralhub-hris](https://github.com/pelailes-cmd/centralhub-hris)
@@ -33,7 +35,7 @@ For a new deployment:
    | `ALLOW_DEVELOPMENT_SEED`               | `false`                                                      |
 
 4. In Supabase **Authentication → URL Configuration**, set **Site URL** to your HTTPS website address and add that address followed by `/auth/confirm` to **Redirect URLs**. For this deployment, use `https://centralhub-hris.vercel.app` and `https://centralhub-hris.vercel.app/auth/confirm`.
-5. Complete the Auth, MFA, email-template, SMTP, and first-administrator steps below. Applying SQL creates the database schema; it does not create a sign-in account. The first-administrator script is a lightweight, one-time setup operation and does not build or run the website.
+5. Complete the [hosted Auth, administrator, MFA, and email steps](docs/HOSTED_SETUP.md). Applying SQL creates the database schema; it does not create a sign-in account. The dashboard setup creates the first account without running the website on your computer.
 6. After changing environment variables, open **Deployments** in Vercel and **Redeploy** the production deployment. Public Next.js environment variables are included during the build.
 
 Once **Settings → Git** shows this repository connected, pushes to `main` automatically create production deployments. Keep real secrets in Vercel's environment settings, never in repository files. Configure preview deployments separately before giving them access to a database.
@@ -67,6 +69,8 @@ Open **http://localhost:3000**. The development preview uses fictional employees
 
 ## Connect a Supabase project
 
+For **Vercel hosting**, use the [browser-based setup guide](docs/HOSTED_SETUP.md). The following environment-file and terminal commands are for local development or a manually managed Node.js host.
+
 1. Create a Supabase project. Keep the service-role key server-side.
 2. Apply every SQL file in `supabase/migrations`, in filename order. Use the Supabase CLI migration workflow or the SQL editor. Do **not** apply `supabase/seed.sql` to a production database.
 3. Copy `.env.example` to `.env.local`, then fill in your project values. The server requires the project URL, publishable key, service-role key, site URL, and a random `AUTH_RATE_LIMIT_PEPPER` of at least 32 characters. Generate the pepper with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Never commit the resulting value.
@@ -78,6 +82,10 @@ Open **http://localhost:3000**. The development preview uses fictional employees
 Supabase's JavaScript client is used for application database operations instead of Prisma. This preserves the caller's Auth JWT and enforces PostgreSQL row-level security for both the website and direct API calls. Versioned SQL migrations are the schema source of truth; introducing a second migration authority would make those rules harder to maintain.
 
 ### First administrator
+
+For a **browser-only setup**, create a confirmed Auth user in the Supabase dashboard, then run [`scripts/bootstrap-admin-dashboard.sql`](scripts/bootstrap-admin-dashboard.sql) in its SQL Editor as `postgres`. Edit the email/name placeholders in that file first. Follow [steps 4–6 of the hosted guide](docs/HOSTED_SETUP.md#4-create-your-first-login-in-supabase) for the exact clicks. This path does not require a server key in a local file, a terminal, or SMTP for first login. The transaction refuses to overwrite existing application accounts and grants the same explicit **Owner + Technical Administrator** combination.
+
+Alternatively, operators using a terminal can use the existing Node.js bootstrap:
 
 After applying migrations, set these **untracked environment variables**:
 
