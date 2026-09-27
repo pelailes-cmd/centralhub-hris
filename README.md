@@ -8,6 +8,36 @@ The application source lives in this GitHub repository. Supabase supplies Postgr
 
 [View the mobile interface](docs/screenshots/overview-mobile.png). Screenshots show fictional development data.
 
+## Deploy from GitHub without a local build
+
+CentralHub can run entirely on **Vercel + Supabase**. Vercel installs dependencies and builds the website in the cloud; your computer does not need to run a development server.
+
+- Website: [centralhub-hris.vercel.app](https://centralhub-hris.vercel.app)
+- Hosting settings: [CentralHub on Vercel](https://vercel.com/afhinzzailes-9029s-projects/centralhub-hris)
+- Source: [pelailes-cmd/centralhub-hris](https://github.com/pelailes-cmd/centralhub-hris)
+
+For a new deployment:
+
+1. Open [Vercel](https://vercel.com/new), connect your GitHub account, and grant the Vercel GitHub app access to this repository. A GitHub login connection and repository permission are separate settings.
+2. Import the repository. Select **Next.js**, keep the root directory at the repository root, use **Node.js 24.x**, and keep the default install and build commands. Click **Deploy**.
+3. A deployment without Supabase credentials shows the setup page. Open the Vercel project's **Settings → Environment Variables** and add the following for **Production**:
+
+   | Variable                               | Value                                                        |
+   | -------------------------------------- | ------------------------------------------------------------ |
+   | `NEXT_PUBLIC_SUPABASE_URL`             | Your hosted Supabase project URL                             |
+   | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Your project's publishable key                               |
+   | `SUPABASE_SERVICE_ROLE_KEY`            | Your private server-side service-role key; mark it sensitive |
+   | `NEXT_PUBLIC_SITE_URL`                 | Your stable HTTPS website address, without a trailing slash  |
+   | `AUTH_RATE_LIMIT_PEPPER`               | A random secret of at least 32 characters; mark it sensitive |
+   | `ENABLE_DEMO`                          | `false`                                                      |
+   | `ALLOW_DEVELOPMENT_SEED`               | `false`                                                      |
+
+4. In Supabase **Authentication → URL Configuration**, set **Site URL** to your HTTPS website address and add that address followed by `/auth/confirm` to **Redirect URLs**. For this deployment, use `https://centralhub-hris.vercel.app` and `https://centralhub-hris.vercel.app/auth/confirm`.
+5. Complete the Auth, MFA, email-template, SMTP, and first-administrator steps below. Applying SQL creates the database schema; it does not create a sign-in account. The first-administrator script is a lightweight, one-time setup operation and does not build or run the website.
+6. After changing environment variables, open **Deployments** in Vercel and **Redeploy** the production deployment. Public Next.js environment variables are included during the build.
+
+Once **Settings → Git** shows this repository connected, pushes to `main` automatically create production deployments. Keep real secrets in Vercel's environment settings, never in repository files. Configure preview deployments separately before giving them access to a database.
+
 ## Start with the interface
 
 Requires Node.js 22 or newer; Node.js 24 is recommended.
@@ -54,6 +84,8 @@ After applying migrations, set these **untracked environment variables**:
 ```dotenv
 BOOTSTRAP_ADMIN_EMAIL=your-real-work-email
 BOOTSTRAP_ADMIN_NAME=Your Name
+# Use a separate number if fictional seed employees already exist.
+BOOTSTRAP_EMPLOYEE_NUMBER=CH-ADMIN-001
 # Optional: omit to send an account invitation instead.
 BOOTSTRAP_ADMIN_PASSWORD=
 ```
